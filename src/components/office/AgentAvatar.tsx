@@ -1,8 +1,15 @@
 import { motion } from 'framer-motion';
+<<<<<<< HEAD
 import { useMemo } from 'react';
 import type { Agent } from '../../types';
 
 export type Facing = 'down' | 'up' | 'left' | 'right';
+=======
+import type { Agent, Gender } from '../../types';
+import { CharacterSprite, type Facing } from './CharacterSprite';
+
+export type { Facing };
+>>>>>>> 0c7a388 (Atualização feita em outro PC)
 
 interface Props {
   agent: Agent;
@@ -14,14 +21,20 @@ interface Props {
 }
 
 /**
+<<<<<<< HEAD
  * Pixel character drawn pixel-by-pixel with CSS box-shadow.
  * Matches the reference: white cap, peach skin, blue shirt, dark pants.
  * Faces 4 directions; walking adds a tiny bob/leg shuffle.
+=======
+ * Pixel avatar (SVG-based). Renders CharacterSprite and wires click + a
+ * subtle bob while walking. No hover scale, no glow halo.
+>>>>>>> 0c7a388 (Atualização feita em outro PC)
  */
 export function AgentAvatar({
   agent,
   size,
   facing = 'down',
+<<<<<<< HEAD
   active,
   walking,
   onClick,
@@ -65,11 +78,19 @@ export function AgentAvatar({
     }
     return parts.join(',');
   }, [sprite, px]);
+=======
+  walking,
+  onClick,
+}: Props) {
+  const gender: Gender =
+    agent.gender ?? (hashString(agent.id) % 2 === 0 ? 'male' : 'female');
+>>>>>>> 0c7a388 (Atualização feita em outro PC)
 
   return (
     <motion.button
       type="button"
       onClick={onClick}
+<<<<<<< HEAD
       whileHover={{ scale: 1.12 }}
       animate={{ y: walking ? [0, -1, 0, -1, 0] : 0 }}
       transition={{
@@ -99,10 +120,30 @@ export function AgentAvatar({
           ▾
         </span>
       )}
+=======
+      animate={{ y: walking ? [0, -1, 0] : 0 }}
+      transition={{
+        y: walking
+          ? { repeat: Infinity, duration: 0.52, ease: 'linear' }
+          : { duration: 0.2 },
+      }}
+      className="relative outline-none cursor-pointer"
+      style={{ width: size, height: size * 1.4 }}
+      title={`${agent.name} · ${agent.title}`}
+    >
+      <CharacterSprite
+        gender={gender}
+        facing={facing}
+        walking={Boolean(walking)}
+        size={size}
+        accent={agent.color}
+      />
+>>>>>>> 0c7a388 (Atualização feita em outro PC)
     </motion.button>
   );
 }
 
+<<<<<<< HEAD
 /* -------------------------------------------------------------------------- */
 /* Sprites                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -198,4 +239,12 @@ function shade(hex: string, amt: number): string {
   g = Math.max(0, Math.min(255, g));
   b = Math.max(0, Math.min(255, b));
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+=======
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+>>>>>>> 0c7a388 (Atualização feita em outro PC)
 }

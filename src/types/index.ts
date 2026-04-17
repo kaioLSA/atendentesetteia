@@ -9,6 +9,11 @@ export type AgentRole =
 
 export type Facing = 'down' | 'up' | 'left' | 'right';
 
+<<<<<<< HEAD
+=======
+export type Gender = 'male' | 'female';
+
+>>>>>>> 0c7a388 (Atualização feita em outro PC)
 export interface Agent {
   id: string;
   name: string;
@@ -18,6 +23,11 @@ export interface Agent {
   emoji: string;
   /** Desk index (cell pos in office grid) */
   desk: number;
+<<<<<<< HEAD
+=======
+  /** Visual gender of the pixel sprite */
+  gender?: Gender;
+>>>>>>> 0c7a388 (Atualização feita em outro PC)
 }
 
 export interface ChatMessage {
