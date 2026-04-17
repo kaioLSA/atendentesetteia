@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(99, 102, 241, 0.08), transparent 60%),
+    radial-gradient(800px 500px at 100% 100%, rgba(34, 211, 238, 0.05), transparent 60%),
+    #05060d;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Pixel rendering helper */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.55); }
+
+/* Utility components */
+@layer components {
+  .panel {
+    @apply bg-bg-800/80 backdrop-blur border border-accent-purple/20 rounded-md;
+  }
+  .panel-header {
+    @apply flex items-center justify-between px-3 py-2 border-b border-accent-purple/20;
+  }
+  .pixel-btn {
+    @apply px-3 py-1.5 rounded-sm border border-accent-purple/40 text-xs font-mono uppercase
+           tracking-wider text-accent-violet hover:bg-accent-purple/15 hover:border-accent-purple
+           transition-colors;
+  }
+  .pixel-input {
+    @apply w-full bg-bg-900/70 border border-accent-purple/25 rounded-sm px-3 py-2
+           text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none
+           focus:border-accent-purple/70 focus:ring-1 focus:ring-accent-purple/40;
+  }
+  .pixel-tag {
+    @apply inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono uppercase
+           tracking-wider rounded-sm border;
+  }
+}
+
+/* Caret blink for terminal vibe */
+.cursor-blink::after {
+  content: '_';
+  margin-left: 2px;
+  animation: blink 1s steps(1) infinite;
+}
