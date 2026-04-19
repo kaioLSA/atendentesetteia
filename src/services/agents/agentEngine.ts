@@ -1,5 +1,5 @@
 import type { Agent, ChatMessage, CompanyContext } from '../../types';
-import { callAgent, hasApiKey } from './claudeClient';
+import { callAgent, hasApiKey, type AttachedFile } from './claudeClient';
 
 /**
  * Generate an agent reply.
@@ -12,6 +12,10 @@ export async function generateAgentReply(params: {
   userText: string;
   company: CompanyContext;
   teammates: Agent[];
+  /** Persistent memory summary for this agent */
+  memory?: string;
+  /** Files already uploaded to the Anthropic Files API */
+  attachedFiles?: AttachedFile[];
 }): Promise<string> {
   if (!hasApiKey()) {
     return `_(${params.agent.name} is offline — open ⚙️ Settings and paste your Anthropic API key to bring me online.)_`;

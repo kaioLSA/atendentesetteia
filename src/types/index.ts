@@ -1,5 +1,6 @@
 export type AgentRole =
   | 'director'
+  | 'hr'
   | 'marketing'
   | 'engineer'
   | 'analyst'
@@ -9,11 +10,10 @@ export type AgentRole =
 
 export type Facing = 'down' | 'up' | 'left' | 'right';
 
-<<<<<<< HEAD
-=======
 export type Gender = 'male' | 'female';
 
->>>>>>> 0c7a388 (Atualização feita em outro PC)
+export type SkinTone = 'light' | 'medium' | 'dark';
+
 export interface Agent {
   id: string;
   name: string;
@@ -23,11 +23,25 @@ export interface Agent {
   emoji: string;
   /** Desk index (cell pos in office grid) */
   desk: number;
-<<<<<<< HEAD
-=======
   /** Visual gender of the pixel sprite */
   gender?: Gender;
->>>>>>> 0c7a388 (Atualização feita em outro PC)
+  /** Skin tone for the generic sprite */
+  skinTone?: SkinTone;
+  /** Free-text description of what this agent specialises in */
+  specialty?: string;
+}
+
+/** Proposed hire returned by the HR agent before the user confirms */
+export interface HireProposal {
+  name: string;
+  title: string;
+  role: AgentRole;
+  specialty: string;
+  color: string;
+  emoji: string;
+  gender: Gender;
+  skinTone: SkinTone;
+  description: string;
 }
 
 export interface ChatMessage {
@@ -57,4 +71,48 @@ export interface CompanyContext {
   products: string;
   culture: string;
   notes: string;
+}
+
+export type TaskStatus = 'pending' | 'in_progress' | 'done';
+export type TaskPriority = 'low' | 'normal' | 'high';
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  assignedTo: string; // agentId
+  status: TaskStatus;
+  priority: TaskPriority;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  result?: string;
+}
+
+export type LogEventType =
+  | 'hire'
+  | 'fire'
+  | 'message_sent'
+  | 'agent_reply'
+  | 'task_start'
+  | 'task_done'
+  | 'desk_visit'
+  | 'company_update'
+  | 'document_add'
+  | 'document_remove'
+  | 'reset';
+
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  type: LogEventType;
+  /** Agent involved (if any) */
+  agentId?: string;
+  agentName?: string;
+  agentEmoji?: string;
+  agentColor?: string;
+  /** Human-readable description */
+  text: string;
+  /** Optional extra detail (e.g. message preview) */
+  detail?: string;
 }

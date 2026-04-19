@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { TopBar } from './components/panels/TopBar';
 import { Grid } from './components/office/Grid';
@@ -8,27 +8,29 @@ import { DocumentCenter } from './components/panels/DocumentCenter';
 import { AddAgentModal } from './components/panels/AddAgentModal';
 import { SettingsModal } from './components/panels/SettingsModal';
 import { NotesModal } from './components/panels/NotesModal';
+import { HireConfirmModal } from './components/panels/HireConfirmModal';
+import { LogsPanel } from './components/panels/LogsPanel';
 import { useStore } from './store/useStore';
-import { hasApiKey } from './services/agents/claudeClient';
+import { useDailyBriefing } from './hooks/useDailyBriefing';
 
 export default function App() {
+  // Feature 5: daily briefing timer
+  useDailyBriefing();
+
   const agents = useStore((s) => s.agents);
   const documents = useStore((s) => s.documents);
   const messages = useStore((s) => s.messages);
+  const pendingHire = useStore((s) => s.pendingHire);
+  const setPendingHire = useStore((s) => s.setPendingHire);
+  const confirmHire = useStore((s) => s.confirmHire);
 
   const [contextOpen, setContextOpen] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
-  // Auto-open settings on first run if no API key
-  useEffect(() => {
-    if (!hasApiKey()) {
-      const timer = window.setTimeout(() => setSettingsOpen(true), 600);
-      return () => window.clearTimeout(timer);
-    }
-  }, []);
 
   const totalChats = Object.values(messages).filter((m) => m.length > 0).length;
 
@@ -40,6 +42,8 @@ export default function App() {
         onOpenAddAgent={() => setAddOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenNotes={() => setNotesOpen(true)}
+        onOpenLogs={() => setLogsOpen((v) => !v)}
+        logsOpen={logsOpen}
       />
 
       <main className="relative flex-1 overflow-hidden">
@@ -75,6 +79,12 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
         />
         <NotesModal open={notesOpen} onClose={() => setNotesOpen(false)} />
+        <HireConfirmModal
+          proposal={pendingHire}
+          onConfirm={confirmHire}
+          onDecline={() => setPendingHire(null)}
+        />
+        <LogsPanel open={logsOpen} onClose={() => setLogsOpen(false)} />
       </main>
     </div>
   );

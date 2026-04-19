@@ -6,6 +6,7 @@ import {
   FileBox,
   Settings,
   AlertCircle,
+  Activity,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useEffect, useState } from 'react';
@@ -17,6 +18,8 @@ interface Props {
   onOpenAddAgent: () => void;
   onOpenSettings: () => void;
   onOpenNotes: () => void;
+  onOpenLogs: () => void;
+  logsOpen: boolean;
 }
 
 export function TopBar({
@@ -25,8 +28,11 @@ export function TopBar({
   onOpenAddAgent,
   onOpenSettings,
   onOpenNotes,
+  onOpenLogs,
+  logsOpen,
 }: Props) {
   const agents = useStore((s) => s.agents);
+  const logsCount = useStore((s) => s.logs.length);
   const activeAgentId = useStore((s) => s.activeAgentId);
   const setActiveAgent = useStore((s) => s.setActiveAgent);
 
@@ -126,6 +132,22 @@ export function TopBar({
           title="Settings"
         >
           <Settings size={14} />
+        </button>
+        <button
+          onClick={onOpenLogs}
+          className={`relative px-2 py-1 rounded-sm border transition-colors ${
+            logsOpen
+              ? 'border-accent-violet text-accent-violet bg-accent-purple/15'
+              : 'border-accent-purple/30 text-slate-300 hover:border-accent-purple'
+          }`}
+          title="Activity logs"
+        >
+          <Activity size={14} />
+          {logsCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-accent-violet text-[8px] font-mono flex items-center justify-center text-white leading-none">
+              {logsCount > 99 ? '!' : logsCount}
+            </span>
+          )}
         </button>
       </div>
     </header>
