@@ -5,13 +5,15 @@ import { Grid } from './components/office/Grid';
 import { ChatContainer } from './components/panels/ChatContainer';
 import { CompanySidebar } from './components/panels/CompanySidebar';
 import { DocumentCenter } from './components/panels/DocumentCenter';
-import { AddAgentModal } from './components/panels/AddAgentModal';
 import { SettingsModal } from './components/panels/SettingsModal';
 import { NotesModal } from './components/panels/NotesModal';
 import { HireConfirmModal } from './components/panels/HireConfirmModal';
 import { LogsPanel } from './components/panels/LogsPanel';
+import { SquadBuilderModal } from './components/panels/SquadBuilderModal';
 import { useStore } from './store/useStore';
 import { useDailyBriefing } from './hooks/useDailyBriefing';
+import { FloorSelector } from './components/ui/FloorSelector';
+import { useEffect } from 'react';
 
 export default function App() {
   // Feature 5: daily briefing timer
@@ -23,14 +25,13 @@ export default function App() {
   const pendingHire = useStore((s) => s.pendingHire);
   const setPendingHire = useStore((s) => s.setPendingHire);
   const confirmHire = useStore((s) => s.confirmHire);
+  const resetAll = useStore((s) => s.resetAll);
 
   const [contextOpen, setContextOpen] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
-
 
   const totalChats = Object.values(messages).filter((m) => m.length > 0).length;
 
@@ -39,7 +40,6 @@ export default function App() {
       <TopBar
         onOpenDocs={() => setDocsOpen(true)}
         onOpenContext={() => setContextOpen(true)}
-        onOpenAddAgent={() => setAddOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenNotes={() => setNotesOpen(true)}
         onOpenLogs={() => setLogsOpen((v) => !v)}
@@ -49,6 +49,7 @@ export default function App() {
       <main className="relative flex-1 overflow-hidden">
         <div className="absolute inset-0 right-[340px] p-6">
           <Grid />
+          <FloorSelector />
         </div>
 
         <ChatContainer />
@@ -73,7 +74,6 @@ export default function App() {
         </footer>
 
         <DocumentCenter open={docsOpen} onClose={() => setDocsOpen(false)} />
-        <AddAgentModal open={addOpen} onClose={() => setAddOpen(false)} />
         <SettingsModal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -85,6 +85,7 @@ export default function App() {
           onDecline={() => setPendingHire(null)}
         />
         <LogsPanel open={logsOpen} onClose={() => setLogsOpen(false)} />
+        <SquadBuilderModal />
       </main>
     </div>
   );

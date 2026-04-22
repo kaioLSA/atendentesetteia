@@ -14,44 +14,10 @@ interface Props {
   skinTone?: SkinTone;
 }
 
-/**
- * Pixel character renderer.
- *
- * The CEO is rendered from `public/boneco.jpg` by sampling its native pixel
- * grid (8-px per native pixel, 17×21 grid) and emitting one <rect> per cell
- * inside an SVG — i.e. the source image, vectorized. No interpretation, no
- * hand-drawn redesign.
- *
- * The white background is dropped (cells with near-white sampled color are
- * omitted), the ground shadow row is replaced by a dedicated <ellipse> so
- * the character is centered without extra padding, and a "back" grid is
- * derived from the front by repainting face-skin cells with the sampled hair
- * color so the silhouette, vest and legs are identical from behind.
- */
-export function CharacterSprite({
-  agentId,
-  gender,
-  facing,
-  walking,
-  sitting,
-  size,
-  accent,
-  skinTone,
-}: Props) {
-  if (agentId === 'ceo') {
-    return <CeoPixelSprite facing={facing} walking={walking} sitting={sitting} size={size} />;
-  }
-  return (
-    <GenericSvgSprite
-      gender={gender}
-      facing={facing}
-      walking={walking}
-      sitting={sitting}
-      size={size}
-      accent={accent}
-      skinTone={skinTone}
-    />
-  );
+export type SemanticTag = 'skin' | 'skinShade' | 'hair' | 'hairHi' | 'shirt' | 'shirtHi' | 'vest' | 'pants' | 'shoes';
+
+export function CharacterSprite(props: Props) {
+  return <UnifiedSprite {...props} />;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -61,12 +27,16 @@ export function CharacterSprite({
 interface BonecoGrid {
   front: (string | null)[][]; // 2D of css colors (null = transparent)
   back: (string | null)[][];
+  semanticFront: (SemanticTag | null)[][];
+  semanticBack: (SemanticTag | null)[][];
   rows: number;
   cols: number;
   /** The row where the ground shadow starts (collapsed into an <ellipse>). */
   shadowRow: number;
   /** bounding box of the character (no white padding, no shadow). */
   bbox: { top: number; left: number; bottom: number; right: number };
+  faceTop: number;
+  shirtTop: number;
 }
 
 // Cached once per tab — the image is only sampled once.
@@ -367,7 +337,62 @@ function sampleBoneco(img: HTMLImageElement): BonecoGrid {
 
   const bbox = { top: 0, left: 0, bottom: shadowRow - 1, right: cols - 1 };
 
-  return { front, back, rows, cols, shadowRow, bbox };
+  // 5) Build semantic grids to allow recoloring for other agents.
+  const semanticFront: (SemanticTag | null)[][] = [];
+  const semanticBack: (SemanticTag | null)[][] = [];
+
+  const classify = (hex: string | null, y: number, x: number, isBack: boolean): SemanticTag | null => {
+    if (!hex) return null;
+    if (isBack) {
+      if (hex === backHairHex || hex === backHairRim) return 'hair';
+      if (hex === backHairHi) return 'hairHi';
+    }
+
+    const p = parseRgb(hex);
+    if (!p) return null;
+    const [r, g, b] = p;
+
+    // Shoes
+    if (y >= shadowRow - 2 && r < 55 && g < 55 && b < 55) return 'shoes';
+    // Pants
+    if (y >= shirtTop + 1 && r < 65 && g < 65 && b < 75) return 'pants';
+
+    const isEdge = x < 4 || x > cols - 5;
+
+    // Skin
+    if (r > 150 && g > 90 && b > 70 && r > g && g > b && r - b > 35) {
+      return r < 190 ? 'skinShade' : 'skin';
+    }
+    // Boost skin detection for hands (they are usually at the edges, lower down, and might be darker)
+    if (isEdge && y >= shirtTop + 2 && y <= shirtTop + 6 && r > 100 && r > g && g > b) {
+      return 'skinShade';
+    }
+
+    // Hair
+    if (y < faceTop + 4 && r < 120 && g < 100 && b < 100) {
+      return r > 80 ? 'hairHi' : 'hair';
+    }
+
+    // Vest / Suit
+    if (y >= faceTop && y <= shirtTop + 5 && r < 65 && g < 65 && b < 65) return 'vest';
+
+    // Shirt/Tie (lighter colors inside the suit). Must be in the CENTER to avoid catching hands.
+    const isCenter = Math.abs(x - Math.floor(cols / 2)) < 3;
+    if (isCenter && y >= faceTop && y <= shirtTop + 5 && r > 100 && g > 100 && b > 100) return 'shirtHi';
+
+    // Fallbacks
+    if (y >= shadowRow - 2) return 'shoes';
+    if (y >= shirtTop + 1) return 'pants';
+    if (y < faceTop + 2) return 'hair';
+    return 'vest';
+  };
+
+  for (let y = 0; y < rows; y++) {
+    semanticFront[y] = front[y].map((c, x) => classify(c, y, x, false));
+    semanticBack[y]  = back[y].map((c, x) => classify(c, y, x, true));
+  }
+
+  return { front, back, semanticFront, semanticBack, rows, cols, shadowRow, bbox, faceTop, shirtTop };
 }
 
 function useBoneco(): BonecoGrid | null {
@@ -385,18 +410,19 @@ function useBoneco(): BonecoGrid | null {
   return grid;
 }
 
-function CeoPixelSprite({
+function UnifiedSprite({
+  agentId,
+  gender,
   facing,
   walking,
   sitting,
   size,
-}: {
-  facing: Facing;
-  walking: boolean;
-  sitting?: boolean;
-  size: number;
-}) {
+  accent,
+  skinTone,
+}: Props) {
   const boneco = useBoneco();
+  const isCeo = agentId === 'ceo';
+  const palette = useMemo(() => buildPalette(gender, accent, skinTone), [gender, accent, skinTone]);
 
   // Walk cycle frame
   const [frame, setFrame] = useState(0);
@@ -422,11 +448,58 @@ function CeoPixelSprite({
   const effectiveFacing = sitting ? 'up' : facing;
   const effectiveWalking = sitting ? false : walking;
 
-  const baseGrid = boneco
-    ? effectiveFacing === 'up'
-      ? boneco.back
-      : boneco.front
-    : null;
+  const baseGrid = useMemo(() => {
+    if (!boneco) return null;
+    const isBack = effectiveFacing === 'up';
+
+    if (isCeo) {
+      return isBack ? boneco.back : boneco.front;
+    }
+
+    const sem = isBack ? boneco.semanticBack : boneco.semanticFront;
+    const mapped = sem.map((row, y) => row.map((tag, x) => {
+      if (!tag) return null;
+
+      // Female dress logic: turn pants and vest into the accent color to form a dress
+      if (gender === 'female' && (tag === 'pants' || tag === 'vest')) {
+        return palette.shirtHi; // Use accent color for the dress
+      }
+
+      // @ts-ignore
+      return (palette[tag] as string) || null;
+    }));
+
+    // Add long hair for females
+    if (gender === 'female' && boneco.faceTop >= 0) {
+      const { faceTop, shirtTop, shadowRow, cols } = boneco;
+      const hairEnd = Math.min(shadowRow - 4, shirtTop + 4);
+      let minX = cols, maxX = -1;
+      const yRef = Math.max(0, faceTop - 1);
+      
+      for (let x = 0; x < cols; x++) {
+        if (sem[yRef][x] === 'hair' || sem[yRef][x] === 'hairHi') {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+        }
+      }
+
+      if (minX <= maxX) {
+        for (let y = faceTop + 1; y < hairEnd; y++) {
+          if (isBack) {
+            for (let x = minX + 1; x < maxX; x++) {
+              if (mapped[y][x]) mapped[y][x] = palette.hair;
+            }
+          } else {
+            // Front view: strands on the sides
+            if (mapped[y][minX]) mapped[y][minX] = palette.hair;
+            if (mapped[y][maxX]) mapped[y][maxX] = palette.hair;
+          }
+        }
+      }
+    }
+
+    return mapped;
+  }, [boneco, effectiveFacing, isCeo, gender, palette]);
 
   // Apply walking leg animation — only the two boot/foot rows directly
   // above the shadow shift. Row shadow-2 and shadow-1 move in opposite
@@ -564,115 +637,6 @@ function CeoPixelSprite({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Generic SVG sprite (all non-CEO agents)                                     */
-/* -------------------------------------------------------------------------- */
-
-function GenericSvgSprite({
-  gender,
-  facing,
-  walking,
-  sitting,
-  size,
-  accent,
-  skinTone,
-}: {
-  gender: Gender;
-  facing: Facing;
-  walking: boolean;
-  sitting?: boolean;
-  size: number;
-  accent?: string;
-  skinTone?: SkinTone;
-}) {
-  const W = 14;
-  const H = 19;
-
-  // When sitting: freeze walk animation
-  const activeWalking = sitting ? false : walking;
-
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    if (!activeWalking) {
-      setFrame(0);
-      return;
-    }
-    const id = window.setInterval(() => {
-      setFrame((f) => (f + 1) % 4);
-    }, 130);
-    return () => window.clearInterval(id);
-  }, [activeWalking]);
-
-  // Typing arm animation: 4-phase cycle, alternates left/right arm pixel
-  const [typingFrame, setTypingFrame] = useState(0);
-  useEffect(() => {
-    if (!sitting) { setTypingFrame(0); return; }
-    const id = window.setInterval(() => setTypingFrame((f) => (f + 1) % 4), 190);
-    return () => window.clearInterval(id);
-  }, [sitting]);
-
-  const palette = useMemo(() => buildPalette(gender, accent, skinTone), [gender, accent, skinTone]);
-  const grid = useMemo(
-    () => sitting
-      ? sittingGridFor(palette, gender)
-      : spriteFor(facing, palette, gender, frame),
-    [sitting, facing, palette, gender, frame]
-  );
-
-  const bob = activeWalking ? (frame % 2 === 0 ? 0 : -0.5) : 0;
-
-  // When sitting, clip the leg rows (15+) so the sprite looks like it's seated
-  // behind the desk — only head + torso visible.
-  const svgH = sitting ? 15 : H + 1;
-
-  // Arm pixels in the sittingGridFor layout:
-  //   col 1  = left arm, rows 10-11
-  //   col 11 = right arm, rows 10-11
-  // typingFrame 1 → left arm lifts,  typingFrame 3 → right arm lifts
-  const ARM_DY     = -0.85;
-  const leftArmUp  = sitting && typingFrame === 1;
-  const rightArmUp = sitting && typingFrame === 3;
-
-  return (
-    <svg
-      viewBox={`0 0 ${W} ${svgH}`}
-      width={size}
-      height={(size / W) * svgH}
-      shapeRendering="crispEdges"
-      style={{ imageRendering: 'pixelated', display: 'block' }}
-    >
-      {/* Ground shadow — only when standing/walking */}
-      {!sitting && (
-        <ellipse cx={W / 2} cy={H} rx={3.2} ry={0.55} fill="rgba(0,0,0,0.35)" />
-      )}
-      <g transform={`translate(0 ${bob})`}>
-        {grid.map((row, y) => {
-          if (sitting && y >= 15) return null; // clip legs
-          return row.map((color, x) => {
-            if (!color) return null;
-            // Per-pixel y-offset for arm animation only
-            const isLeftArm  = sitting && x === 1  && y >= 10 && y <= 11;
-            const isRightArm = sitting && x === 11 && y >= 10 && y <= 11;
-            const dy = (isLeftArm && leftArmUp) ? ARM_DY
-                     : (isRightArm && rightArmUp) ? ARM_DY
-                     : 0;
-            return (
-              <rect
-                key={`${x}-${y}`}
-                x={x}
-                y={y + dy}
-                width={1}
-                height={1}
-                fill={color as string}
-              />
-            );
-          });
-        })}
-      </g>
-    </svg>
-  );
-}
-
 const SKIN_TONES: Record<SkinTone, { skin: string; skinShade: string }> = {
   light:  { skin: '#efd3b5', skinShade: '#b7876a' },
   medium: { skin: '#c8956c', skinShade: '#8b5c3a' },
@@ -701,188 +665,5 @@ function buildPalette(gender: Gender, accent?: string, skinTone: SkinTone = 'lig
     pants: '#1e2028',
     pantsHi: '#2a2c34',
     shoes: '#0a0a0a',
-    eye: '#0c0c0c',
   };
-}
-
-/**
- * Static seated sprite viewed from behind.
- * Rows 0-14 are identical to the standing back-view.
- * Rows 15-18 replace the standing legs with thighs spread wide + feet below.
- */
-function sittingGridFor(pal: Record<string, string>, gender: Gender): (string | 0)[][] {
-  const H = pal.hair, Hh = pal.hairHi;
-  const S = pal.skin;
-  const V = pal.vest, Vh = pal.vestHi;
-  const Sh = pal.shirt, Sh2 = pal.shirtHi;
-  const P = pal.pants, Ph = pal.pantsHi;
-  const Bt = pal.shoes;
-  const _ = 0 as const;
-  const sideHair = gender === 'female';
-
-  return [
-    // ── Head (rows 0-8) — same as back-view standing ──
-    [_, _, _, _, _, H,  H,  H,  H,  _, _, _, _, _],
-    [_, _, _, _, H,  Hh, Hh, Hh, Hh, H,  _, _, _, _],
-    [_, _, _, H,  H,  Hh, H,  H,  Hh, H,  H,  _, _, _],
-    [_, _, H,  H,  Hh, H,  H,  H,  H,  Hh, H,  H,  _, _],
-    [_, H,  H,  Hh, H,  H,  H,  H,  H,  H,  Hh, H,  H,  _],
-    [_, H,  Hh, H,  H,  H,  H,  H,  H,  H,  H,  Hh, H,  _],
-    [_, _, H,  H,  H,  H,  H,  H,  H,  H,  H,  H,  _, _],
-    [_, _, sideHair ? H : S, S, S, S, S, S, S, S, sideHair ? H : S, _, _, _],
-    [_, _, _, S,  S,  S,  S,  S,  S,  S,  _, _, _, _],
-    // ── Torso (rows 9-14) — same as back-view standing ──
-    [_, _, V,  V,  V,  V,  V,  V,  V,  V,  V,  _, _, _],
-    [_, S,  V,  Vh, V,  Sh, Sh, V,  Vh, V,  V,  S,  _, _],
-    [_, S,  V,  V,  Sh, Sh, Sh, Sh, V,  V,  V,  S,  _, _],
-    [_, _, V,  V,  Sh, Sh2,Sh2,Sh, V,  V,  _, _, _, _],
-    [_, _, V,  V,  V,  V,  V,  V,  V,  V,  _, _, _, _],
-    [_, _, _, V,  V,  V,  V,  V,  V,  _, _, _, _, _],
-    // ── Seated legs (rows 15-18) ──
-    // Thighs spread wide to the sides (person sitting, viewed from behind)
-    [_, _, Ph, P,  P,  P,  _, _, P,  P,  P,  Ph, _, _],
-    // Inner thigh / knee area
-    [_, _, _, P,  Ph, P,  _, _, P,  Ph, P,  _, _, _],
-    // Feet visible below the chair seat
-    [_, _, _, Bt, Bt, _, _, _, _, Bt, Bt, _, _, _],
-    [_, _, _, _, _, _, _, _, _, _, _, _, _, _],
-  ];
-}
-
-function spriteFor(
-  facing: Facing,
-  pal: Record<string, string>,
-  gender: Gender,
-  frame: number
-): (string | 0)[][] {
-  const H = pal.hair;
-  const Hh = pal.hairHi;
-  const S = pal.skin;
-  const Sd = pal.skinShade;
-  const V = pal.vest;
-  const Vh = pal.vestHi;
-  const Sh = pal.shirt;
-  const Sh2 = pal.shirtHi;
-  const P = pal.pants;
-  const Ph = pal.pantsHi;
-  const Bt = pal.shoes;
-  const E = pal.eye;
-  const _ = 0 as const;
-
-  const stepLeft = frame === 1;
-  const stepRight = frame === 3;
-
-  const legsRow1: (string | 0)[] = stepLeft
-    ? [_, _, _, _, P, Ph, P, _, P, P, _, _, _, _]
-    : stepRight
-    ? [_, _, _, _, P, P, _, P, Ph, P, _, _, _, _]
-    : [_, _, _, _, P, Ph, P, P, Ph, P, _, _, _, _];
-
-  const legsRow2: (string | 0)[] = stepLeft
-    ? [_, _, _, P, P, P, _, _, _, P, P, _, _, _]
-    : stepRight
-    ? [_, _, _, P, P, _, _, _, P, P, P, _, _, _]
-    : [_, _, _, _, P, P, _, _, P, P, _, _, _, _];
-
-  const shoesRow: (string | 0)[] = stepLeft
-    ? [_, _, _, Bt, Bt, _, _, _, _, _, Bt, Bt, _, _]
-    : stepRight
-    ? [_, _, _, Bt, Bt, _, _, _, _, _, Bt, Bt, _, _]
-    : [_, _, _, _, Bt, Bt, _, _, Bt, Bt, _, _, _, _];
-
-  if (facing === 'up') {
-    const sideHair = gender === 'female';
-    return [
-      [_, _, _, _, _, H, H, H, H, _, _, _, _, _],
-      [_, _, _, _, H, Hh, Hh, Hh, Hh, H, _, _, _, _],
-      [_, _, _, H, H, Hh, H, H, Hh, H, H, _, _, _],
-      [_, _, H, H, Hh, H, H, H, H, Hh, H, H, _, _],
-      [_, H, H, Hh, H, H, H, H, H, H, Hh, H, H, _],
-      [_, H, Hh, H, H, H, H, H, H, H, H, Hh, H, _],
-      [_, _, H, H, H, H, H, H, H, H, H, H, _, _],
-      [_, _, sideHair ? H : S, S, S, S, S, S, S, S, sideHair ? H : S, _, _, _],
-      [_, _, _, S, S, S, S, S, S, S, _, _, _, _],
-      [_, _, V, V, V, V, V, V, V, V, V, _, _, _],
-      [_, S, V, Vh, V, Sh, Sh, V, Vh, V, V, S, _, _],
-      [_, S, V, V, Sh, Sh, Sh, Sh, V, V, V, S, _, _],
-      [_, _, V, V, Sh, Sh2, Sh2, Sh, V, V, _, _, _, _],
-      [_, _, V, V, V, V, V, V, V, V, _, _, _, _],
-      [_, _, _, V, V, V, V, V, V, _, _, _, _, _],
-      legsRow1,
-      legsRow2,
-      shoesRow,
-      [_, _, _, _, _, _, _, _, _, _, _, _, _, _],
-    ];
-  }
-
-  if (facing === 'left') {
-    return [
-      [_, _, _, _, _, H, H, H, H, _, _, _, _, _],
-      [_, _, _, _, H, Hh, Hh, Hh, Hh, H, _, _, _, _],
-      [_, _, _, H, H, Hh, H, Hh, H, H, H, _, _, _],
-      [_, _, H, H, Hh, H, H, H, Hh, S, H, _, _, _],
-      [_, _, H, Hh, H, E, H, S, S, S, S, _, _, _],
-      [_, _, H, H, H, S, S, S, S, S, _, _, _, _],
-      [_, _, _, S, S, Sd, S, S, S, _, _, _, _, _],
-      [_, _, _, _, S, S, S, S, _, _, _, _, _, _],
-      [_, _, V, V, V, V, V, V, _, _, _, _, _, _],
-      [_, _, V, Vh, Sh, Sh, V, V, _, _, _, _, _, _],
-      [_, S, V, Sh, Sh2, Sh2, Sh, V, _, _, _, _, _, _],
-      [_, S, V, Sh, Sh, Sh, Sh, V, _, _, _, _, _, _],
-      [_, _, V, V, V, V, V, V, _, _, _, _, _, _],
-      [_, _, _, V, V, V, V, _, _, _, _, _, _, _],
-      [_, _, _, P, Ph, P, P, _, _, _, _, _, _, _],
-      [_, _, _, P, P, Ph, P, _, _, _, _, _, _, _],
-      [_, _, _, P, P, _, P, P, _, _, _, _, _, _],
-      [_, _, _, Bt, Bt, _, Bt, Bt, _, _, _, _, _, _],
-      [_, _, _, _, _, _, _, _, _, _, _, _, _, _],
-    ];
-  }
-
-  if (facing === 'right') {
-    return [
-      [_, _, _, _, _, H, H, H, H, _, _, _, _, _],
-      [_, _, _, _, H, Hh, Hh, Hh, Hh, H, _, _, _, _],
-      [_, _, _, H, H, H, Hh, H, Hh, H, H, _, _, _],
-      [_, _, _, H, S, Hh, H, H, H, Hh, H, H, _, _],
-      [_, _, _, S, S, S, S, H, E, H, Hh, H, _, _],
-      [_, _, _, _, S, S, S, S, S, H, H, H, _, _],
-      [_, _, _, _, _, S, S, S, Sd, S, S, _, _, _],
-      [_, _, _, _, _, _, S, S, S, S, _, _, _, _],
-      [_, _, _, _, _, _, V, V, V, V, V, V, _, _],
-      [_, _, _, _, _, _, V, V, Sh, Sh, Vh, V, _, _],
-      [_, _, _, _, _, _, V, Sh, Sh2, Sh2, Sh, V, S, _],
-      [_, _, _, _, _, _, V, Sh, Sh, Sh, Sh, V, S, _],
-      [_, _, _, _, _, _, V, V, V, V, V, V, _, _],
-      [_, _, _, _, _, _, _, V, V, V, V, _, _, _],
-      [_, _, _, _, _, _, _, P, P, Ph, P, _, _, _],
-      [_, _, _, _, _, _, _, P, Ph, P, P, _, _, _],
-      [_, _, _, _, _, _, P, P, _, P, P, _, _, _],
-      [_, _, _, _, _, _, Bt, Bt, _, Bt, Bt, _, _, _],
-      [_, _, _, _, _, _, _, _, _, _, _, _, _, _],
-    ];
-  }
-
-  const femaleHair = gender === 'female';
-  return [
-    [_, _, _, _, _, H, H, H, H, _, _, _, _, _],
-    [_, _, _, _, H, Hh, Hh, Hh, Hh, H, _, _, _, _],
-    [_, _, _, H, H, Hh, H, H, Hh, H, H, _, _, _],
-    [_, _, H, H, Hh, H, H, H, H, Hh, H, H, _, _],
-    [_, H, H, Hh, S, S, S, S, S, S, Hh, H, H, _],
-    [_, H, Hh, S, S, S, S, S, S, S, S, Hh, H, _],
-    [_, _, H, S, E, S, S, S, S, E, S, H, _, _],
-    [_, _, _, S, S, S, S, S, S, S, S, _, _, _],
-    [_, _, femaleHair ? H : _, S, S, Sd, S, S, Sd, S, S, femaleHair ? H : _, _, _],
-    [_, _, _, _, S, S, S, S, S, S, _, _, _, _],
-    [_, _, _, V, V, V, V, V, V, V, _, _, _, _],
-    [_, _, V, V, Vh, Sh, Sh, Sh, Sh, Vh, V, V, _, _],
-    [_, S, V, Vh, Sh, Sh, Sh, Sh, Sh, Sh, V, Vh, S, _],
-    [_, S, V, V, Sh, Sh2, Sh2, Sh2, Sh2, Sh, V, V, S, _],
-    [_, _, V, V, Sh, Sh, Sh, Sh, Sh, Sh, V, V, _, _],
-    [_, _, _, V, V, V, V, V, V, V, V, _, _, _],
-    legsRow1,
-    legsRow2,
-    shoesRow,
-  ];
 }

@@ -6,7 +6,8 @@ export type AgentRole =
   | 'analyst'
   | 'secretary'
   | 'designer'
-  | 'sales';
+  | 'sales'
+  | 'specialist';
 
 export type Facing = 'down' | 'up' | 'left' | 'right';
 
@@ -29,6 +30,8 @@ export interface Agent {
   skinTone?: SkinTone;
   /** Free-text description of what this agent specialises in */
   specialty?: string;
+  /** Floor index (multi-floor support) */
+  floor?: number;
 }
 
 /** Proposed hire returned by the HR agent before the user confirms */
@@ -115,4 +118,18 @@ export interface LogEntry {
   text: string;
   /** Optional extra detail (e.g. message preview) */
   detail?: string;
+}
+
+export interface SquadBuilderAnswers {
+  name: string;
+  business: string;
+  audience: string;
+  platform: string;
+}
+
+export interface Squad {
+  id: string;
+  name: string;
+  emoji: string;
+  agentIds: string[];
 }

@@ -66,6 +66,8 @@ export interface CallOptions {
   memory?: string;
   /** Files already uploaded to the Anthropic Files API */
   attachedFiles?: AttachedFile[];
+  /** Optional tools the agent can use */
+  tools?: Anthropic.Tool[];
 }
 
 /**
@@ -101,6 +103,13 @@ export async function callAgent(opts: CallOptions): Promise<string> {
   // Inject persistent memory if available
   if (opts.memory && opts.memory.trim()) {
     system += `\n\n[MEMÓRIA]: ${opts.memory}`;
+  }
+
+  // Feature: Explicit mention control
+  system += `\n\n[REGRA CRÍTICA]: Use a menção com @ (ex: @id-agente) APENAS se você quiser chamar esse agente para responder nesta conversa. Se estiver apenas falando SOBRE o agente sem querer que ele responda, use apenas o nome comum dele (ex: "o pesquisador", "o Lucas") SEM o símbolo @.`;
+  
+  if (opts.agent.id === 'ceo') {
+    system += `\nVocê é o CEO. Como autoridade máxima, evite chamar os subordinados via @ por qualquer motivo banal. Mantenha as conversas com o usuário limpas.`;
   }
 
   // Convert chat history into Anthropic message format.
@@ -149,6 +158,7 @@ export async function callAgent(opts: CallOptions): Promise<string> {
     max_tokens: 1024,
     system,
     messages,
+    tools: opts.tools,
   });
 
   const text = response.content
@@ -157,11 +167,28 @@ export async function callAgent(opts: CallOptions): Promise<string> {
     .join('\n')
     .trim();
 
+  // If there's a tool use, we handle it as part of the reply logic in useStore
+  // or return a special marker. For now, we return the text and let the caller
+  // handle response.content for tool calls.
+  
+  const toolCalls = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+  if (toolCalls.length > 0) {
+    return JSON.stringify({
+      text: text || '',
+      tool_calls: toolCalls.map(tc => ({
+        id: tc.id,
+        name: tc.name,
+        input: tc.input
+      }))
+    });
+  }
+
   return text || '...';
 }
 
 /**
  * Ask the HR agent (via Claude) to generate a structured hire proposal.
+ * Accepts ANY real-world job title — not limited to predefined roles.
  * Returns a parsed HireProposal or null if the API is unavailable / parse fails.
  */
 export async function callHrForProposal(
@@ -176,18 +203,19 @@ export async function callHrForProposal(
   const takenNames = existingAgents.map((a) => a.name).join(', ');
 
   const system = `You are an HR Manager. Your only task is to produce a hire proposal as a JSON object.
-Given a hire request, reply with ONLY a valid JSON object — no markdown fences, no explanation:
+Given a hire request for ANY real-world job position, reply with ONLY a valid JSON object — no markdown fences, no explanation:
 {
   "name": "Brazilian first name (must NOT be any of: ${takenNames})",
-  "title": "Specific job title (e.g. 'Senior Frontend Developer')",
-  "role": "engineer|designer|marketing|analyst|sales|secretary",
-  "specialty": "One clear sentence describing exactly what this person focuses on",
-  "color": "A hex color that visually represents the role (e.g. #34d399 for engineer)",
-  "emoji": "One relevant emoji",
+  "title": "Exact job title as requested (e.g. 'Chef de Cozinha', 'Contador', 'Advogado Trabalhista')",
+  "role": "Use one of these ONLY if it clearly fits: engineer|designer|marketing|analyst|sales|secretary|hr|director. Otherwise use: specialist",
+  "specialty": "One precise sentence describing EXACTLY what this person does in this role AND what they do NOT do (be specific about scope boundaries)",
+  "color": "A hex color that visually represents this profession (be creative and appropriate)",
+  "emoji": "One relevant emoji for this profession",
   "gender": "male|female",
   "skinTone": "light|medium|dark",
-  "description": "2-3 warm sentences: background, personality trait, why they fit the team"
+  "description": "2-3 warm sentences: background in this specific field, personality trait, why they fit the team"
 }
+IMPORTANT: Accept any real-world profession. A chef, lawyer, accountant, doctor, musician — all valid.
 Company context: ${company.companyName || 'a startup'} — ${company.mission || 'building great products'}.`;
 
   try {
@@ -211,6 +239,7 @@ Company context: ${company.companyName || 'a startup'} — ${company.mission || 
   }
   return null;
 }
+
 
 /**
  * Summarise a conversation into a compact memory note (3-5 bullets, Portuguese).

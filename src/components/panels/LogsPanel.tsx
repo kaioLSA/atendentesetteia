@@ -51,52 +51,91 @@ function LogRow({ entry }: { entry: LogEntry }) {
 
   return (
     <motion.div
+      layout
       initial={{ opacity: 0, x: 12 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.18 }}
-      className="flex gap-2.5 px-3 py-2 rounded cursor-default"
-      style={{ background: meta.bg }}
-      onClick={() => hasDetail && setExpanded((v) => !v)}
+      className={`flex flex-col gap-1 px-3 py-2 rounded transition-all cursor-pointer ${
+        expanded ? 'ring-1 ring-accent-purple/30 shadow-xl' : 'hover:brightness-110'
+      }`}
+      style={{ 
+        background: expanded ? 'rgba(20,20,40,0.98)' : meta.bg,
+        marginBottom: expanded ? '8px' : '0px',
+        marginTop: expanded ? '8px' : '0px',
+      }}
+      onClick={() => setExpanded((v) => !v)}
     >
-      {/* Colour dot */}
-      <div className="flex-shrink-0 mt-1.5">
-        <div
-          className="w-2 h-2 rounded-full"
-          style={{ background: meta.dot, boxShadow: `0 0 5px ${meta.dot}80` }}
-        />
-      </div>
-
-      <div className="flex-1 min-w-0">
-        {/* Main text + timestamp */}
-        <div className="flex items-start justify-between gap-2">
-          <p
-            className="text-xs text-slate-200 leading-snug"
-            style={{ color: entry.agentColor ? `color-mix(in srgb, ${entry.agentColor} 60%, #e2e8f0)` : undefined }}
-          >
-            {entry.text}
-          </p>
-          <span className="text-[10px] font-mono text-slate-500 whitespace-nowrap flex-shrink-0 mt-px">
-            {relativeTime(entry.timestamp)}
-          </span>
+      <div className="flex gap-2.5">
+        {/* Colour dot */}
+        <div className="flex-shrink-0 mt-1.5">
+          <div
+            className="w-2 h-2 rounded-full"
+            style={{ background: meta.dot, boxShadow: `0 0 5px ${meta.dot}80` }}
+          />
         </div>
 
-        {/* Detail preview */}
-        {hasDetail && (
-          <p
-            className={`text-[11px] text-slate-400 mt-0.5 leading-snug font-mono ${
-              expanded ? '' : 'line-clamp-1'
-            }`}
-          >
-            {entry.detail}
-          </p>
-        )}
-        {hasDetail && (
-          <button
-            className="text-[10px] text-slate-500 hover:text-slate-300 mt-0.5 uppercase tracking-wide font-mono"
-          >
-            {expanded ? '▲ ocultar' : '▼ ver mais'}
-          </button>
-        )}
+        <div className="flex-1 min-w-0">
+          {/* Main text + timestamp */}
+          <div className="flex items-start justify-between gap-2">
+            <p
+              className={`text-xs text-slate-200 leading-snug ${expanded ? 'font-medium' : 'truncate'}`}
+              style={{ color: entry.agentColor ? `color-mix(in srgb, ${entry.agentColor} 60%, #e2e8f0)` : undefined }}
+            >
+              {entry.text}
+            </p>
+            <span className="text-[10px] font-mono text-slate-500 whitespace-nowrap flex-shrink-0 mt-px">
+              {relativeTime(entry.timestamp)}
+            </span>
+          </div>
+
+          {/* Metadata revealed on expand */}
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center gap-2 mt-2 mb-2">
+                  <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400 bg-white/5 px-1 rounded border border-white/10">
+                    {entry.type.replace('_', ' ')}
+                  </span>
+                  <span className="text-[9px] font-mono text-slate-600">
+                    {new Date(entry.timestamp).toLocaleTimeString('pt-BR')}
+                  </span>
+                </div>
+
+                {hasDetail && (
+                  <div className="text-[11px] text-slate-300 mt-2 leading-relaxed font-mono bg-black/40 p-2.5 rounded border border-white/5 whitespace-pre-wrap break-words">
+                    {entry.detail}
+                  </div>
+                )}
+                
+                {entry.agentId && (
+                  <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-slate-500">Agente:</span>
+                      <span className="text-[10px] font-mono text-slate-300">
+                        {entry.agentEmoji} {entry.agentName}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-600 italic">
+                      @{entry.agentId}
+                    </span>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Collapsed preview */}
+          {!expanded && hasDetail && (
+            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug font-mono line-clamp-1 opacity-60">
+              {entry.detail}
+            </p>
+          )}
+        </div>
       </div>
     </motion.div>
   );

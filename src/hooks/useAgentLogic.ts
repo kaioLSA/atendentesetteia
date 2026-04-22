@@ -27,6 +27,10 @@ interface Args {
    * heading to their desks are not affected (they may cross chair cells).
    */
   wanderBlocked: (col: number, row: number) => boolean;
+  /**
+   * Meeting room interior. Agents cannot wander or spawn here.
+   */
+  meetingBlocked: (col: number, row: number) => boolean;
 }
 
 /** How long (ms) an agent lingers at their desk after finishing a task. */
@@ -90,10 +94,12 @@ function bfsPath(
  * - After finishing they linger at the desk for LINGER_MS before wandering.
  * - Sprite always faces the direction of movement; faces screen (up) at desk.
  */
-export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: Args) {
+export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked, meetingBlocked }: Args) {
   const agents = useStore((s) => s.agents);
   const busy   = useStore((s) => s.busyAgents);
   const called = useStore((s) => s.calledAgents);
+  const squads = useStore((s) => s.squads);
+  const activeAgentId = useStore((s) => s.activeAgentId);
 
   const [positions, setPositions] = useState<Record<string, AgentPos>>({});
   const targets     = useRef<Record<string, { x: number; y: number; atDesk: boolean } | null>>({});
@@ -117,7 +123,7 @@ export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: 
       const x = Math.floor(x0 + (x1 - x0) * t);
       const y = Math.floor(y0 + (y1 - y0) * t);
       if (x === startC && y === startR) continue; // still in own cell — skip
-      if (wanderBlocked(x, y)) return false;
+      if (wanderBlocked(x, y) || meetingBlocked(x, y)) return false;
     }
     return true;
   }
@@ -129,10 +135,10 @@ export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: 
       agents.forEach((a) => {
         if (!next[a.id]) {
           let x = 2, y = 2;
-          for (let tries = 0; tries < 30; tries++) {
-            const cx = Math.floor(Math.random() * (cols - 2)) + 1;
+          for (let tries = 0; tries < 50; tries++) {
+            const cx = Math.floor(Math.random() * (cols - 7)) + 1; // Keep away from the right side (meeting room)
             const cy = Math.floor(Math.random() * (rows - 2)) + 1;
-            if (!blocked(cx, cy)) { x = cx + 0.5; y = cy + 0.5; break; }
+            if (!blocked(cx, cy) && !meetingBlocked(cx, cy)) { x = cx + 0.5; y = cy + 0.5; break; }
           }
           next[a.id] = { x, y, facing: 'down', walking: false };
         }
@@ -152,11 +158,11 @@ export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: 
       if (!deskSet.has(a.id)) return;
       const slot = desks[a.desk % desks.length];
       if (slot) {
-        targets.current[a.id]   = { x: slot.col + 0.5, y: slot.row + 1.4, atDesk: true };
-        waypoints.current[a.id] = [];
+        targets.current[a.id] = { x: slot.col + 0.5, y: slot.row + 1.4, atDesk: true };
       }
+      waypoints.current[a.id] = [];
     });
-  }, [busy, called]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [busy, called, agents, desks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Decide a target for each agent every ~2.5s
   useEffect(() => {
@@ -178,7 +184,6 @@ export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: 
           if (!cur) return;
 
           if (hasTask) {
-            // Walk to THIS agent's own desk (by desk index, not array position)
             const slot = desks[a.desk % desks.length];
             if (slot) {
               targets.current[a.id] = {
@@ -198,6 +203,7 @@ export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: 
               const ty = Math.max(1, Math.min(rows - 2, cur.y + dy));
               if (
                 !wanderBlocked(Math.floor(tx), Math.floor(ty)) &&
+                !meetingBlocked(Math.floor(tx), Math.floor(ty)) &&
                 isPathClear(cur.x, cur.y, tx, ty)
               ) {
                 targets.current[a.id] = { x: tx, y: ty, atDesk: false };
@@ -237,6 +243,19 @@ export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: 
           const cur = prev[a.id];
           const tgt = targets.current[a.id];
           if (!cur) continue;
+
+          // EMERGENCY EVACUATION: If agent is inside meeting room but NOT busy with a squad task, 
+          // and not walking towards it, push them out.
+          const inMeeting = meetingBlocked(Math.floor(cur.x), Math.floor(cur.y));
+          const activeSquad = squads.find(sq => sq.id === activeAgentId);
+          const isSquadTask = activeSquad && activeSquad.agentIds.includes(a.id) && busy.includes(a.id);
+          
+          if (inMeeting && !isSquadTask) {
+             // Teleport out to a safe zone (near the entrance)
+             mut(a.id, { ...cur, x: 13.5, y: 5.5, walking: false });
+             targets.current[a.id] = null;
+             continue;
+          }
 
           if (!tgt) {
             if (cur.walking) mut(a.id, { ...cur, walking: false });
@@ -280,10 +299,15 @@ export function useAgentMovement({ cols, rows, desks, blocked, wanderBlocked }: 
           }
 
           const step = tgt.atDesk ? 0.15 : 0.06;
-          const nx   = cur.x + (dx / dist) * step;
-          const ny   = cur.y + (dy / dist) * step;
+          const actualStep = Math.min(step, dist);
+          const nx   = cur.x + (dx / dist) * actualStep;
+          const ny   = cur.y + (dy / dist) * actualStep;
 
-          if (blocked(Math.floor(nx), Math.floor(ny))) {
+          // CRITICAL: busy agents heading to MEETING can pass through meeting-blocked cells.
+          // Wandering agents can never enter.
+          const isHeadingToMeeting = tgt.atDesk && (Math.floor(tgt.x) >= 15);
+
+          if (blocked(Math.floor(nx), Math.floor(ny)) || (!isHeadingToMeeting && meetingBlocked(Math.floor(nx), Math.floor(ny)))) {
             if (tgt.atDesk && !hasWp) {
               // Blocked on the way to desk — find a path around.
               const path = bfsPath(cur.x, cur.y, tgt.x, tgt.y, blocked, cols, rows);

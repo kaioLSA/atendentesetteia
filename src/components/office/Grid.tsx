@@ -105,10 +105,14 @@ export function Grid() {
   const activeAgentId = useStore((s) => s.activeAgentId);
   const setActiveAgent = useStore((s) => s.setActiveAgent);
   const busyAgents = useStore((s) => s.busyAgents);
+  const thinkingAgents = useStore((s) => s.thinkingAgents);
   const calledAgents = useStore((s) => s.calledAgents);
   const sitAtDesk = useStore((s) => s.sitAtDesk);
   // Physically seated agents — drives the monitor's green "working" screen.
+  // Physically seated agents — drives the monitor's green "working" screen.
   const seatedAgents = useStore((s) => s.seatedAgents);
+  const currentFloor = useStore((s) => s.currentFloor);
+  const triggerSquadBuilder = useStore((s) => s.triggerSquadBuilder);
 
   // 3 rows × 4 desks, evenly spaced. Rows [2, 5, 8] give corridors at
   // rows 1, 4, 7, 10 — one open row between every desk+chair pair.
@@ -123,9 +127,10 @@ export function Grid() {
     return list;
   }, []);
 
-  const { blocked, wanderBlocked } = useMemo(() => {
+  const { blocked, wanderBlocked, meetingBlocked } = useMemo(() => {
     const hard = new Set<string>(); // walls + desks  (movement collision)
     const soft = new Set<string>(); // also chairs     (wander pathfinding only)
+    const meeting = new Set<string>(); // meeting room interior
 
     // Outer walls
     for (let c = 0; c < COLS; c++) {
@@ -155,15 +160,16 @@ export function Grid() {
     // Meeting room interior
     for (let r = MEETING.row; r < MEETING.row + MEETING.h; r++) {
       for (let c = MEETING.col; c < MEETING.col + MEETING.w; c++) {
-        hard.add(`${c},${r}`);
+        meeting.add(`${c},${r}`);
       }
     }
 
     const blockedFn = (col: number, row: number) => hard.has(`${col},${row}`);
     const wanderFn  = (col: number, row: number) =>
       hard.has(`${col},${row}`) || soft.has(`${col},${row}`);
+    const meetingFn = (col: number, row: number) => meeting.has(`${col},${row}`);
 
-    return { blocked: blockedFn, wanderBlocked: wanderFn };
+    return { blocked: blockedFn, wanderBlocked: wanderFn, meetingBlocked: meetingFn };
   }, [deskSlots]);
 
   const positions = useAgentMovement({
@@ -172,6 +178,7 @@ export function Grid() {
     desks: deskSlots,
     blocked,
     wanderBlocked,
+    meetingBlocked,
   });
 
   return (
@@ -250,7 +257,7 @@ export function Grid() {
 
         {/* ── Desk zones: chair + desk surface, both clickable ── */}
         {deskSlots.map((d) => {
-          const owner     = agents.find((a) => a.desk === d.id);
+          const owner     = agents.find((a) => a.desk === d.id && (a.floor ?? 0) === currentFloor);
           // Monitor only goes green once the agent is physically seated —
           // not as soon as a task is assigned.
           const isWorking = owner != null && seatedAgents.includes(owner.id);
@@ -259,7 +266,14 @@ export function Grid() {
             ? '0 0 0 2px rgba(255,255,255,0.85), 0 0 10px rgba(255,255,255,0.2)'
             : undefined;
           const handleClick = owner
-            ? (e: React.MouseEvent) => { e.stopPropagation(); sitAtDesk(owner.id); }
+            ? (e: React.MouseEvent) => { 
+                e.stopPropagation(); 
+                if (owner.id === 'ceo') {
+                  triggerSquadBuilder();
+                } else {
+                  sitAtDesk(owner.id); 
+                }
+              }
             : undefined;
 
           return (
@@ -305,22 +319,11 @@ export function Grid() {
         })}
 
         {/* Agents */}
-        {agents.map((a) => {
+        {agents.filter(a => (a.floor ?? 0) === currentFloor).map((a) => {
           const pos = positions[a.id];
           if (!pos) return null;
           const size = cell * 0.9;
-          const isBusy = busyAgents.includes(a.id);
-          // Seated = stopped AND facing back (reached desk or lingering there)
           const isSitting = !pos.walking && pos.facing === 'up';
-
-          // Feature 2: status dot color
-          const dotColor = busyAgents.includes(a.id)
-            ? '#facc15'
-            : seatedAgents.includes(a.id)
-            ? '#4ade80'
-            : calledAgents.includes(a.id)
-            ? '#38bdf8'
-            : '#94a3b8';
 
           return (
             <div
@@ -341,21 +344,7 @@ export function Grid() {
                 pointerEvents: 'auto',
               }}
             >
-              {/* Status dot — top-right corner of the agent container */}
-              <div
-                className="absolute pointer-events-none"
-                style={{
-                  top: 0,
-                  right: 0,
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: dotColor,
-                  boxShadow: `0 0 5px ${dotColor}aa`,
-                  zIndex: 1,
-                }}
-              />
-              {isBusy && <ThinkingBubble cell={cell} />}
+              {thinkingAgents.includes(a.id) && <ThinkingBubble cell={cell} />}
               <AgentAvatar
                 agent={a}
                 size={size}
